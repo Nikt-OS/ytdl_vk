@@ -156,32 +156,36 @@ hearManager.hear(/yt/i, async (context) => {
     }
   }
   if (args[2].toLowerCase() == "music") {
-    await yt((val, url) => {
+    await yt((val, url, ext) => {
       end((end) => {
-        if (end == "end")
+        if (end == "end" && ext == "mp3") {
+          upload_music(val, url);
+        } else {
           rename_mp3(val).then((fl) => {
             upload_music(fl, url);
           });
+        }
       });
     });
     console.log("=====================================");
     async function yt(callback) {
       return video.on("info", (info) => {
+        var filename = info._filename.split(".")[0];
         context.send("Начинаю загрузку");
         console.log("Начинаю загрузку");
         console.log(`size: ${info.size / 1048576} Мб`);
         console.log(`НАзвание: ${info._filename}`);
-        if (info.size < 2147483600) {
-          video.pipe(fs.createWriteStream("tmp/" + info._filename));
+        if (info.size < 2147483600 && info.ext == "mp3") {
+          video.pipe(fs.createWriteStream(`tmp/${filename}.mp3.mus`));
         } else {
           context.send("Размер файла больше 2ГБ, увы(");
         }
-        var filename = info._filename.split(".")[0];
+
         return callback(filename, info._filename, info.ext);
       });
     }
 
-    async function end(callback) {
+    function end(callback) {
       return video.on("end", () => {
         console.log("Закончил загрузку");
         return callback("end");
@@ -198,9 +202,13 @@ hearManager.hear(/yt/i, async (context) => {
       });
       return `${file}.mp3.mus`;
     }
-    async function upload_music(name, u) {
-      sus = __dirname + `\\tmp\\${u}`;
-      noext = __dirname + `\\tmp\\${name}`;
+    async function upload_music(name, u, ext) {
+      sus = __dirname + `\\tmp\\${u}`; // мп3 расширение
+      if (ext == "mp3") {
+        noext = __dirname + `\\tmp\\${name}.mp3.mus`; /* mp3.mus*/
+      } else {
+      noext = __dirname + `\\tmp\\${name}.mp3.mus`; /* mp4*/
+     }
       await user.upload
         .document({
           source: {
@@ -222,7 +230,7 @@ hearManager.hear(/yt/i, async (context) => {
             message: "Документ загружен!",
             attachment: `doc${doc.ownerId}_${doc.id}`,
           });
-         // fs.unlinkSync(sus);
+          // fs.unlinkSync(sus);
           fs.unlinkSync(noext);
         })
         .catch((err) => {
