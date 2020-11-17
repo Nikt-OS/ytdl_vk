@@ -20,7 +20,7 @@
   "dependencies": {
     "@vk-io/hear": "^1.0.2",
     "delay": "^4.4.0",
-    "ffmpeg": "0.0.4",
+    "fluent-ffmpeg": "^2.1.2",
     "vk-io": "^4.0.4",
     "youtube-dl": "^3.0.2"
   }

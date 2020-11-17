@@ -21,7 +21,7 @@ group.updates.on("message", (context, next) => {
   }
 
   return next();
-});
+});8
 const hearManager = new HearManager();
 group.updates.on("message_new", hearManager.middleware);
 hearManager.hear(/yt/i, async (context) => {
