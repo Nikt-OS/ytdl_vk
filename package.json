@@ -1,0 +1,27 @@
+{
+  "name": "ytdl_vk",
+  "version": "1.0.0",
+  "description": "Загруажет видео с Youtube (и не только) в ВКонтакте в виде документа или видео",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "private"
+  },
+  "keywords": [
+    "yt",
+    "Youtube",
+    "VK"
+  ],
+  "author": "Nikit_OS, Labile.Paranoid",
+  "license": "ISC",
+  "dependencies": {
+    "@vk-io/hear": "^1.0.2",
+    "delay": "^4.4.0",
+    "ffmpeg": "0.0.4",
+    "vk-io": "^4.0.4",
+    "youtube-dl": "^3.0.2"
+  }
+}
