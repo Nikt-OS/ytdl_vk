@@ -3,6 +3,14 @@ const { HearManager } = require("@vk-io/hear");
 const fs = require("fs");
 const delay = require("delay");
 const youtubedl = require("youtube-dl");
+const path = require('path');
+const getLink = require("./util/get-link");
+const songdata = require("./util/get-songdata");
+const urlParser = require("./util/url-parser");
+const filter = require("./util/filters");
+const mergeMetadata = require("./lib/metadata");
+const download = require("./lib/downloader");
+var spinner= 1;
 var us =
   "7e356f4764ad607c1e54ccde9ae788eff089aa695474b06d765a90f71d0b0b934330b2861e904381165bc";
 var gr =
@@ -159,6 +167,9 @@ hearManager.hear(/yt/i, async (context) => {
     await yt((val, url, ext) => {
       end((end) => {
         if (end == "end" && ext == "mp3") {
+          getlink(val).then((ans) => {
+            console.log(ans);
+          });
           upload_music(val, url);
         } else {
           rename_mp3(val).then((fl) => {
@@ -204,11 +215,12 @@ hearManager.hear(/yt/i, async (context) => {
     }
     async function upload_music(name, u, ext) {
       sus = __dirname + `\\tmp\\${u}`; // мп3 расширение
+      console.log(ext);
       if (ext == "mp3") {
         noext = __dirname + `\\tmp\\${name}.mp3.mus`; /* mp3.mus*/
       } else {
-      noext = __dirname + `\\tmp\\${name}.mp3.mus`; /* mp4*/
-     }
+        noext = __dirname + `\\tmp\\${name}.mp3.mus`; /* mp4*/
+      }
       await user.upload
         .document({
           source: {
@@ -239,6 +251,145 @@ hearManager.hear(/yt/i, async (context) => {
         });
     }
   }
+});
+hearManager.hear(/^spotify\s?(.*)/i, async (context) => {
+  var spotifye = new songdata();
+    const urlType = await urlParser(await filter.removeQuery(context.$match[1]));
+    var songData = {};
+    const URL = context.$match[1];
+    let outputDir = ".\\tmp"
+    switch (urlType) {
+      case "song": {
+        songData = await spotifye.getTrack(URL);
+        const songName = songData.name + " " + songData.artists[0];
+
+        const output = path.resolve(
+          outputDir,
+          await filter.validateOutput(
+            `${songData.name} - ${songData.artists[0]}.mp3`
+          )
+        );
+        console.log(`Saving Song to: ${output}`);
+
+        console.log(`Song: ${songData.name} - ${songData.artists[0]}`);
+
+        const youtubeLink = await getLink(songName);
+        console.log("Downloading...");
+
+        await download(youtubeLink, output, spinner, async function () {
+          await mergeMetadata(output, songData, spinner);
+        });
+        break;
+      }
+      case "playlist": {
+        var cacheCounter = 0;
+        songData = await spotifye.getPlaylist(URL);
+
+        var dir = path.join(
+          outputDir,
+          filter.validateOutputSync(songData.name)
+        );
+        console.log(`Total Songs: ${songData.total_tracks}`);
+        console.log(`Saving Playlist: ${dir}`);
+
+        cacheCounter = await cache.read(dir, spinner);
+        dir = path.join(dir, ".spdlcache");
+
+        async function downloadLoop(trackIds, counter) {
+          const songNam = await spotifye.extrTrack(trackIds[counter]);
+          counter++;
+          console.log(
+            `${counter}. Song: ${songNam.name} - ${songNam.artists[0]}`
+          );
+          counter--;
+
+          const ytLink = await getLink(songNam.name + " " + songNam.artists[0]);
+
+          const output = path.resolve(
+            outputDir,
+            filter.validateOutputSync(songData.name),
+            filter.validateOutputSync(
+              `${songNam.name} - ${songNam.artists[0]}.mp3`
+            )
+          );
+          console.log("Downloading...");
+
+          download(ytLink, output, spinner, async function () {
+            await cache.write(dir, ++counter);
+
+            await mergeMetadata(output, songNam, spinner, function () {
+              if (counter == trackIds.length) {
+                console.log(`\nFinished. Saved ${counter} Songs at ${output}.`);
+              } else {
+                downloadLoop(trackIds, counter);
+              }
+            });
+          });
+        }
+        downloadLoop(songData.tracks, cacheCounter);
+        break;
+      }
+      case "album": {
+        var cacheCounter = 0;
+        songData = await spotifye.getAlbum(URL);
+        songData.name = songData.name.replace("/", "-");
+
+        var dir = path.join(
+          outputDir,
+          await filter.validateOutput(songData.name)
+        );
+
+        console.log(`Total Songs: ${songData.total_tracks}`);
+        console.log(`Saving Album: ` + path.join(outputDir, songData.name));
+
+        cacheCounter = await cache.read(dir, spinner);
+        dir = path.join(dir, ".spdlcache");
+
+        async function downloadLoop(trackIds, counter) {
+          const songNam = await spotifye.extrTrack(trackIds[counter]);
+          counter++;
+          console.log(
+            `${counter}. Song: ${songNam.name} - ${songNam.artists[0]}`
+          );
+          counter--;
+
+          const ytLink = await getLink(songNam.name + " " + songNam.artists[0]);
+
+          const output = path.resolve(
+            outputDir,
+            await filter.validateOutput(
+              songData.name,
+              `${songNam.name} - ${songNam.artists[0]}.mp3`
+            )
+          );
+          console.log("Downloading...");
+
+          download(ytLink, output, spinner, async function () {
+            await cache.write(dir, ++counter);
+
+            await mergeMetadata(output, songNam, spinner, function () {
+              if (counter == trackIds.length) {
+                console.log(`\nFinished. Saved ${counter} Songs at ${output}.`);
+              } else {
+                downloadLoop(trackIds, counter);
+              }
+            });
+          });
+        }
+        downloadLoop(songData.tracks, cacheCounter);
+        break;
+      }
+      case "artist": {
+        console.log(
+          "To download artists list, add them to a separate Playlist and download."
+        );
+        break;
+      }
+      default: {
+        throw new Error("Invalid URL type");
+      }
+    }
+
 });
 group.updates.start().catch(console.error);
 user.updates.start().catch(console.error);
