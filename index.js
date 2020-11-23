@@ -3,14 +3,15 @@ const { HearManager } = require("@vk-io/hear");
 const fs = require("fs");
 const delay = require("delay");
 const youtubedl = require("youtube-dl");
-const path = require('path');
+const path = require("path");
+const cache = require('./lib/cache');
 const getLink = require("./util/get-link");
 const songdata = require("./util/get-songdata");
 const urlParser = require("./util/url-parser");
 const filter = require("./util/filters");
 const mergeMetadata = require("./lib/metadata");
 const download = require("./lib/downloader");
-var spinner= 1;
+var spinner = 1;
 var us =
   "ae7b522698954b1f9924af82b6fc4b6ffe2bc17b3c87aa550a83defe65878d22d7eb6e98ed9429cd29c9d";
 var gr =
@@ -186,7 +187,7 @@ hearManager.hear(/yt/i, async (context) => {
         console.log("Начинаю загрузку");
         console.log(`size: ${info.size / 1048576} Мб`);
         console.log(`НАзвание: ${info._filename}`);
-        if (info.size < 2147483600 && info.ext == "mp3") {
+        if (info.size < 2147483600) {
           video.pipe(fs.createWriteStream(`tmp/${filename}.mp3.mus`));
         } else {
           context.send("Размер файла больше 2ГБ, увы(");
@@ -254,142 +255,138 @@ hearManager.hear(/yt/i, async (context) => {
 });
 hearManager.hear(/^spotify\s?(.*)/i, async (context) => {
   var spotifye = new songdata();
-    const urlType = await urlParser(await filter.removeQuery(context.$match[1]));
-    var songData = {};
-    const URL = context.$match[1];
-    let outputDir = ".\\tmp"
-    switch (urlType) {
-      case "song": {
-        songData = await spotifye.getTrack(URL);
-        const songName = songData.name + " " + songData.artists[0];
+  const urlType = await urlParser(await filter.removeQuery(context.$match[1]));
+  var songData = {};
+  const URL = context.$match[1];
+  let outputDir = ".\\tmp";
+  switch (urlType) {
+    case "song": {
+      songData = await spotifye.getTrack(URL);
+      const songName = songData.name + " " + songData.artists[0];
+
+      const output = path.resolve(
+        outputDir,
+        await filter.validateOutput(
+          `${songData.name} - ${songData.artists[0]}.mp3`
+        )
+      );
+      console.log(`Saving Song to: ${output}`);
+
+      console.log(`Song: ${songData.name} - ${songData.artists[0]}`);
+
+      const youtubeLink = await getLink(songName);
+      console.log("Downloading...");
+
+      await download(youtubeLink, output, spinner, async function () {
+        await mergeMetadata(output, songData, spinner);
+      });
+      break;
+    }
+    case "playlist": {
+      var cacheCounter = 0;
+      songData = await spotifye.getPlaylist(URL);
+
+      var dir = path.join(outputDir, filter.validateOutputSync(songData.name));
+      console.log(`Total Songs: ${songData.total_tracks}`);
+      console.log(`Saving Playlist: ${dir}`);
+
+      cacheCounter = await cache.read(dir, spinner);
+      dir = path.join(dir, ".spdlcache");
+
+      async function downloadLoop(trackIds, counter) {
+        const songNam = await spotifye.extrTrack(trackIds[counter]);
+        counter++;
+        console.log(
+          `${counter}. Song: ${songNam.name} - ${songNam.artists[0]}`
+        );
+        counter--;
+
+        const ytLink = await getLink(songNam.name + " " + songNam.artists[0]);
+
+        const output = path.resolve(
+          outputDir,
+          filter.validateOutputSync(songData.name),
+          filter.validateOutputSync(
+            `${songNam.name} - ${songNam.artists[0]}.mp3`
+          )
+        );
+        console.log("Downloading...");
+
+        download(ytLink, output, spinner, async function () {
+          await cache.write(dir, ++counter);
+
+          await mergeMetadata(output, songNam, spinner, function () {
+            if (counter == trackIds.length) {
+              console.log(`\nFinished. Saved ${counter} Songs at ${output}.`);
+            } else {
+              downloadLoop(trackIds, counter);
+            }
+          });
+        });
+      }
+      downloadLoop(songData.tracks, cacheCounter);
+      break;
+    }
+    case "album": {
+      var cacheCounter = 0;
+      songData = await spotifye.getAlbum(URL);
+      songData.name = songData.name.replace("/", "-");
+
+      var dir = path.join(
+        outputDir,
+        await filter.validateOutput(songData.name)
+      );
+
+      console.log(`Total Songs: ${songData.total_tracks}`);
+      console.log(`Saving Album: ` + path.join(outputDir, songData.name));
+
+      cacheCounter = await cache.read(dir, spinner);
+      dir = path.join(dir, ".spdlcache");
+
+      async function downloadLoop(trackIds, counter) {
+        const songNam = await spotifye.extrTrack(trackIds[counter]);
+        counter++;
+        console.log(
+          `${counter}. Song: ${songNam.name} - ${songNam.artists[0]}`
+        );
+        counter--;
+
+        const ytLink = await getLink(songNam.name + " " + songNam.artists[0]);
 
         const output = path.resolve(
           outputDir,
           await filter.validateOutput(
-            `${songData.name} - ${songData.artists[0]}.mp3`
+            songData.name,
+            `${songNam.name} - ${songNam.artists[0]}.mp3`
           )
         );
-        console.log(`Saving Song to: ${output}`);
-
-        console.log(`Song: ${songData.name} - ${songData.artists[0]}`);
-
-        const youtubeLink = await getLink(songName);
         console.log("Downloading...");
 
-        await download(youtubeLink, output, spinner, async function () {
-          await mergeMetadata(output, songData, spinner);
+        download(ytLink, output, spinner, async function () {
+          await cache.write(dir, ++counter);
+
+          await mergeMetadata(output, songNam, spinner, function () {
+            if (counter == trackIds.length) {
+              console.log(`\nFinished. Saved ${counter} Songs at ${output}.`);
+            } else {
+              downloadLoop(trackIds, counter);
+            }
+          });
         });
-        break;
       }
-      case "playlist": {
-        var cacheCounter = 0;
-        songData = await spotifye.getPlaylist(URL);
-
-        var dir = path.join(
-          outputDir,
-          filter.validateOutputSync(songData.name)
-        );
-        console.log(`Total Songs: ${songData.total_tracks}`);
-        console.log(`Saving Playlist: ${dir}`);
-
-        cacheCounter = await cache.read(dir, spinner);
-        dir = path.join(dir, ".spdlcache");
-
-        async function downloadLoop(trackIds, counter) {
-          const songNam = await spotifye.extrTrack(trackIds[counter]);
-          counter++;
-          console.log(
-            `${counter}. Song: ${songNam.name} - ${songNam.artists[0]}`
-          );
-          counter--;
-
-          const ytLink = await getLink(songNam.name + " " + songNam.artists[0]);
-
-          const output = path.resolve(
-            outputDir,
-            filter.validateOutputSync(songData.name),
-            filter.validateOutputSync(
-              `${songNam.name} - ${songNam.artists[0]}.mp3`
-            )
-          );
-          console.log("Downloading...");
-
-          download(ytLink, output, spinner, async function () {
-            await cache.write(dir, ++counter);
-
-            await mergeMetadata(output, songNam, spinner, function () {
-              if (counter == trackIds.length) {
-                console.log(`\nFinished. Saved ${counter} Songs at ${output}.`);
-              } else {
-                downloadLoop(trackIds, counter);
-              }
-            });
-          });
-        }
-        downloadLoop(songData.tracks, cacheCounter);
-        break;
-      }
-      case "album": {
-        var cacheCounter = 0;
-        songData = await spotifye.getAlbum(URL);
-        songData.name = songData.name.replace("/", "-");
-
-        var dir = path.join(
-          outputDir,
-          await filter.validateOutput(songData.name)
-        );
-
-        console.log(`Total Songs: ${songData.total_tracks}`);
-        console.log(`Saving Album: ` + path.join(outputDir, songData.name));
-
-        cacheCounter = await cache.read(dir, spinner);
-        dir = path.join(dir, ".spdlcache");
-
-        async function downloadLoop(trackIds, counter) {
-          const songNam = await spotifye.extrTrack(trackIds[counter]);
-          counter++;
-          console.log(
-            `${counter}. Song: ${songNam.name} - ${songNam.artists[0]}`
-          );
-          counter--;
-
-          const ytLink = await getLink(songNam.name + " " + songNam.artists[0]);
-
-          const output = path.resolve(
-            outputDir,
-            await filter.validateOutput(
-              songData.name,
-              `${songNam.name} - ${songNam.artists[0]}.mp3`
-            )
-          );
-          console.log("Downloading...");
-
-          download(ytLink, output, spinner, async function () {
-            await cache.write(dir, ++counter);
-
-            await mergeMetadata(output, songNam, spinner, function () {
-              if (counter == trackIds.length) {
-                console.log(`\nFinished. Saved ${counter} Songs at ${output}.`);
-              } else {
-                downloadLoop(trackIds, counter);
-              }
-            });
-          });
-        }
-        downloadLoop(songData.tracks, cacheCounter);
-        break;
-      }
-      case "artist": {
-        console.log(
-          "To download artists list, add them to a separate Playlist and download."
-        );
-        break;
-      }
-      default: {
-        throw new Error("Invalid URL type");
-      }
+      downloadLoop(songData.tracks, cacheCounter);
+      break;
     }
-
+    case "artist": {
+      console.log(
+        "To download artists list, add them to a separate Playlist and download."
+      );
+      break;
+    }
+    default: {
+      throw new Error("Invalid URL type");
+    }
+  }
 });
 group.updates.start().catch(console.error);
 user.updates.start().catch(console.error);
