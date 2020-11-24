@@ -11,6 +11,7 @@ const urlParser = require("./util/url-parser");
 const filter = require("./util/filters");
 const mergeMetadata = require("./lib/metadata");
 const download = require("./lib/downloader");
+const out = require("./conv");
 var spinner = 1;
 var us =
   "ae7b522698954b1f9924af82b6fc4b6ffe2bc17b3c87aa550a83defe65878d22d7eb6e98ed9429cd29c9d";
@@ -34,6 +35,7 @@ group.updates.on("message", (context, next) => {
 const hearManager = new HearManager();
 group.updates.on("message_new", hearManager.middleware);
 hearManager.hear(/yt/i, async (context) => {
+  out.out(context, "grop");
   let args = context.text.match(/^yt\s?(.*)\s(.+)/i);
   if (args[1].toLowerCase() == null || args[2].toLowerCase() == null)
     return context.send(`введи ссылку типа, yt https://youtu.be/woxXdmX3ld8`, {
@@ -88,12 +90,21 @@ hearManager.hear(/yt/i, async (context) => {
         .then((doc) => {
           console.log("Success upload", doc);
           //   console.log(context)
-          group.api.messages.edit({
-            peer_id: context.peerId,
-            message_id: context.id + 1,
-            message: "Документ загружен!",
-            attachment: `doc${doc.ownerId}_${doc.id}`,
-          });
+          if (peerType == "user") {
+            group.api.messages.edit({
+              peer_id: context.peerId,
+              message_id: context.id + 1,
+              message: "Документ загружен!",
+              attachment: `doc${doc.ownerId}_${doc.id}`,
+            });
+          } else {
+            group.api.messages.edit({
+              peer_id: context.peerId,
+              message_id: context.conversationMessageId + 1,
+              message: "Документ загружен!",
+              attachment: `doc${doc.ownerId}_${doc.id}`,
+            });
+          }
           fs.unlinkSync(sus);
         })
         .catch((err) => {
@@ -179,17 +190,18 @@ hearManager.hear(/yt/i, async (context) => {
     async function yt(callback) {
       return video.on("info", (info) => {
         var filename = info._filename.split(".")[0];
+        var sng_name = filename.split(`-${info.id}`)[0];
         context.send("Начинаю загрузку");
         console.log("Начинаю загрузку");
         console.log(`size: ${info.size / 1048576} Мб`);
-        console.log(`НАзвание: ${filename}\n`);
+        console.log(`НАзвание: ${sng_name}\n`);
         if (info.size < 2147483600) {
-          video.pipe(fs.createWriteStream(`tmp/${filename}.mp3.mus`));
+          video.pipe(fs.createWriteStream(`tmp/${sng_name}.mp3.mus`));
         } else {
           context.send("Размер файла больше 2ГБ, увы(");
         }
 
-        return callback(filename);
+        return callback(sng_name);
       });
     }
 
@@ -227,12 +239,25 @@ hearManager.hear(/yt/i, async (context) => {
         .then((doc) => {
           console.log("Success upload", doc);
           //   console.log(context)
-          group.api.messages.edit({
-            peer_id: context.peerId,
-            message_id: context.id + 1,
-            message: "Документ загружен!",
-            attachment: `doc${doc.ownerId}_${doc.id}`,
-          });
+          if (context.peerType == "user") {
+            group.api.messages.edit({
+              peer_id: context.peerId,
+              message_id: context.id + 1,
+              message: "Документ загружен!",
+              attachment: `doc${doc.ownerId}_${doc.id}`,
+            });
+          } else {
+            group.api.messages.delete({
+              message_ids: context.conversationMessageId + 1,
+              delete_for_all: 1,
+            });
+            group.api.messages.send({
+              peer_id: context.peerId,
+              message: "Документ загружен!",
+              attachment: `doc${doc.ownerId}_${doc.id}`,
+              random_id: Math.random() + context.conversationMessageId,
+            });
+          }
           // fs.unlinkSync(sus);
           fs.unlinkSync(noext);
         })
