@@ -4,7 +4,7 @@ const fs = require("fs");
 const delay = require("delay");
 const youtubedl = require("youtube-dl");
 const path = require("path");
-const cache = require('./lib/cache');
+const cache = require("./lib/cache");
 const getLink = require("./util/get-link");
 const songdata = require("./util/get-songdata");
 const urlParser = require("./util/url-parser");
@@ -165,18 +165,14 @@ hearManager.hear(/yt/i, async (context) => {
     }
   }
   if (args[2].toLowerCase() == "music") {
-    await yt((val, url, ext) => {
+    await yt((val) => {
       end((end) => {
-        if (end == "end" && ext == "mp3") {
-          getlink(val).then((ans) => {
-            console.log(ans);
-          });
-          upload_music(val, url);
-        } else {
-          rename_mp3(val).then((fl) => {
-            upload_music(fl, url);
-          });
+        if (end == "end") {
+          upload_music(val);
         }
+        //  rename_mp3(val).then((fl) => {
+        //   upload_music(fl);
+        //  });
       });
     });
     console.log("=====================================");
@@ -186,14 +182,14 @@ hearManager.hear(/yt/i, async (context) => {
         context.send("Начинаю загрузку");
         console.log("Начинаю загрузку");
         console.log(`size: ${info.size / 1048576} Мб`);
-        console.log(`НАзвание: ${info._filename}`);
+        console.log(`НАзвание: ${filename}\n`);
         if (info.size < 2147483600) {
           video.pipe(fs.createWriteStream(`tmp/${filename}.mp3.mus`));
         } else {
           context.send("Размер файла больше 2ГБ, увы(");
         }
 
-        return callback(filename, info._filename, info.ext);
+        return callback(filename);
       });
     }
 
@@ -214,14 +210,8 @@ hearManager.hear(/yt/i, async (context) => {
       });
       return `${file}.mp3.mus`;
     }
-    async function upload_music(name, u, ext) {
-      sus = __dirname + `\\tmp\\${u}`; // мп3 расширение
-      console.log(ext);
-      if (ext == "mp3") {
-        noext = __dirname + `\\tmp\\${name}.mp3.mus`; /* mp3.mus*/
-      } else {
-        noext = __dirname + `\\tmp\\${name}.mp3.mus`; /* mp4*/
-      }
+    async function upload_music(name) {
+      noext = __dirname + `\\tmp\\${name}.mp3.mus`; /* mp3.mus*/
       await user.upload
         .document({
           source: {
@@ -231,7 +221,7 @@ hearManager.hear(/yt/i, async (context) => {
               filename: noext,
             },
           },
-          title: u,
+          title: name + ".mp3",
           group_id: ngr,
         })
         .then((doc) => {
