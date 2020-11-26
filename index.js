@@ -1,7 +1,6 @@
 const { VK } = require("vk-io");
 const { HearManager } = require("@vk-io/hear");
 const fs = require("fs");
-const delay = require("delay");
 const youtubedl = require("youtube-dl");
 const path = require("path");
 const cache = require("./lib/cache");
@@ -48,7 +47,7 @@ hearManager.hear(/yt/i, async (context) => {
   if (args[2].toLowerCase() == "doc") {
     await yt((val, url) => {
       end((end) => {
-        if (end == "end") upload_doc(val, url);
+        if (end == "end") upload_doc(val);
       });
     });
     console.log("=====================================");
@@ -73,7 +72,7 @@ hearManager.hear(/yt/i, async (context) => {
         return callback("end");
       });
     }
-    async function upload_doc(name, u) {
+    async function upload_doc(name) {
       sus = __dirname + `\\tmp\\${name}`;
       await user.upload
         .document({
@@ -90,7 +89,7 @@ hearManager.hear(/yt/i, async (context) => {
         .then((doc) => {
           console.log("Success upload", doc);
           //   console.log(context)
-          if (peerType == "user") {
+          if (context.peerType == "user") {
             group.api.messages.edit({
               peer_id: context.peerId,
               message_id: context.id + 1,
@@ -124,15 +123,16 @@ hearManager.hear(/yt/i, async (context) => {
       return video.on("info", (info) => {
         context.send("Начинаю загрузку");
         console.log("Начинаю загрузку с  YouTube");
+        var vid_name = info._filename.split(`-${info.id}`)[0];
         console.log(`size: ${info.size / 1048576} Мб`);
-        console.log(`НАзвание: ${info._filename}`);
+        console.log(`НАзвание: ${vid_name}`);
         console.log(`Описание: ${info.description}`);
         if (info.size < 2147483600) {
-          video.pipe(fs.createWriteStream("tmp/" + info._filename));
+          video.pipe(fs.createWriteStream("tmp/" + vid_name + ".mp4"));
         } else {
           context.send("Размер данного видео больше 2ГБ, увы(");
         }
-        return callback(info._filename, info.description);
+        return callback(vid_name, info.description);
       });
     }
 
@@ -143,14 +143,14 @@ hearManager.hear(/yt/i, async (context) => {
       });
     }
     async function upload_vid(name, dsc) {
-      sus = __dirname + `\\tmp\\${name}`;
+      sus = __dirname + `\\tmp\\${name}.mp4`;
       await user.upload
         .video({
-          timeout: 1000 * 240,
+          timeout: 1e3 * 60,
           source: {
             values: {
               value: fs.readFileSync(sus),
-              filename: name,
+              filename: `${name}.mp4`,
             },
           },
           name: name,
@@ -189,8 +189,7 @@ hearManager.hear(/yt/i, async (context) => {
     console.log("=====================================");
     async function yt(callback) {
       return video.on("info", (info) => {
-        var filename = info._filename.split(".")[0];
-        var sng_name = filename.split(`-${info.id}`)[0];
+        var sng_name = info._filename.split(`-${info.id}`)[0];
         context.send("Начинаю загрузку");
         console.log("Начинаю загрузку");
         console.log(`size: ${info.size / 1048576} Мб`);
@@ -210,17 +209,6 @@ hearManager.hear(/yt/i, async (context) => {
         console.log("Закончил загрузку");
         return callback("end");
       });
-    }
-    async function rename_mp3(file) {
-      var dir = __dirname + "\\tmp\\";
-      fs.rename(`${dir + file}.mp3`, `${dir + file}.mp3.mus`, (error) => {
-        if (error) {
-          console.log(error);
-        } else {
-          console.log("\nFile Renamed\n");
-        }
-      });
-      return `${file}.mp3.mus`;
     }
     async function upload_music(name) {
       noext = __dirname + `\\tmp\\${name}.mp3.mus`; /* mp3.mus*/
